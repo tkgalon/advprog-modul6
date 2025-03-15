@@ -84,3 +84,44 @@ Ada perubahan untuk eksperimen pada bagian code if-else handle_connection.
 Dimana kita bisa mensimulasikan ketika pengguna menggakses endpoint /sleep, mereka harus menunggu selama 10 detik terlebih dahulu.
 Tentunya hal tersebut bisa berdampak terhadap tertundanya request lain dalam waktu bersamaan. Hal ini terjadi karena server kita masih berjalan dalam single-thread sehingga hanya bisa menangani satu request dalam satu waktu. Jadi, kita bisa membayangkan jika banyak pengguna mengakses server bersamaan, mereka harus menunggu sampai giliran tiba, yang mana tentunya membuat server terasa lambat dan tidak responsif.
 Menurut saya ini menunjukan kelemahan pada single-threaded server.
+
+## Commit 5: Multithreaded server using Threadpool
+Untuk menangani masalah pada commit ke-4, kita bisa mengimplementasikan Threadpool untuk mengubah server kita menjadi multithreaded server, yang mana memungkinkan server menangani beberapa request secara bersamaan. Dengan menggunakan ThreadPool, kita bisa membagi tugas ke beberapa worker yang berjalan secara paralel sehingga setiap request tidak harus menunggu request lain selesai terlebih dahulu. Lalu, setiap worker dalam ThreadPool akan mengambil tugas dari antrian dan menjalankannya secara independen sehingga server menjadi lebih responsif. Dengan cara ini, ketika ada satu request yang membutuhkan waktu lama untuk diproses, worker lain yang nganggur tetap bisa menangani request baru tanpa harus menunggu. Selain itu, penggunaan Arc dan Mutex memastikan bahwa hanya satu worker yang bisa mengambil tugas dalam satu waktu, menghindari konflik antar worker yang ada. Alhasil dengan implementasi tersebut kita bisa men-solve salah satu masalah yang ada pada single-threaded server.
+
+Instance ThreadPool akan dibuat pada fungsi main. Setelah itu, setiap request dimasukkan ke dalam antrian, lalu worker dalam ThreadPool (yang sedang nganggur) mengambil request tersebut tanpa harus menunggu request lain selesai.
+```rust
+fn main() {
+    let listener = TcpListener::bind("127.0.0.1:7878").unwrap();
+    let pool = ThreadPool::new(4);
+
+    for stream in listener.incoming() {
+        let stream = stream.unwrap();
+
+        pool.execute(|| {
+            handle_connection(stream);
+        });
+    }
+}
+```
+
+Implementasi worker:
+```rust
+struct Worker {
+    id: usize,
+    thread: thread::JoinHandle<()>,
+}
+
+impl Worker {
+    fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Worker {
+        let thread = thread::spawn(move || loop {
+            let job = receiver.lock().unwrap().recv().unwrap();
+
+            println!("Worker {id} got a job; executing.");
+
+            job();
+        });
+
+        Worker { id, thread }
+    }
+}
+```
