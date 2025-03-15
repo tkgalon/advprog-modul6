@@ -68,3 +68,19 @@ Berikut code yang belum direfactor:
         stream.write_all(response.as_bytes()).unwrap();
     }
 ```
+
+## Commit 4: Simulation of slow request
+Ada perubahan untuk eksperimen pada bagian code if-else handle_connection.
+```rust
+    let (status_line, filename) = match &request_line[..] {
+        "GET / HTTP/1.1" => ("HTTP/1.1 200 OK", "hello.html"), 
+        "GET /sleep HTTP/1.1" => {
+        thread::sleep(Duration::from_secs(10)); 
+        ("HTTP/1.1 200 OK", "hello.html") 
+        }
+        _ => ("HTTP/1.1 404 NOT FOUND", "404.html"),
+    };
+```
+Dimana kita bisa mensimulasikan ketika pengguna menggakses endpoint /sleep, mereka harus menunggu selama 10 detik terlebih dahulu.
+Tentunya hal tersebut bisa berdampak terhadap tertundanya request lain dalam waktu bersamaan. Hal ini terjadi karena server kita masih berjalan dalam single-thread sehingga hanya bisa menangani satu request dalam satu waktu. Jadi, kita bisa membayangkan jika banyak pengguna mengakses server bersamaan, mereka harus menunggu sampai giliran tiba, yang mana tentunya membuat server terasa lambat dan tidak responsif.
+Menurut saya ini menunjukan kelemahan pada single-threaded server.
